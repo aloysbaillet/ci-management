@@ -1,0 +1,14 @@
+[settings]
+os=Linux
+os_build=Linux
+os.version=rhel7
+arch=x86_64
+arch_build=x86_64
+compiler=gcc
+compiler.version=6.3
+compiler.libcxx=libstdc++
+cppstd=14
+build_type=Release
+[options]
+[build_requires]
+[env]
