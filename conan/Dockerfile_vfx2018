@@ -1,4 +1,5 @@
 FROM centos/devtoolset-6-toolchain-centos7
+LABEL com.vfxplatform.version="CY2018"
 
 ENV ASWF_BUILD_DIR /tmp/vfx-build
 ENV ASWF_ROOT_DIR /opt/aswf/vfx2018
@@ -8,8 +9,13 @@ USER root
 RUN mkdir -p $ASWF_BUILD_DIR && \
     mkdir -p $ASWF_ROOT_DIR
 
-# Common requirements
-RUN yum install -y which python-devel make
+RUN yum install -y \
+    bzip2-devel \
+    file \
+    make \
+    python-devel \
+    which \
+    zlib-devel 
 
 RUN curl "https://bootstrap.pypa.io/get-pip.py" -o "get-pip.py" &&\
     python get-pip.py
@@ -19,10 +25,7 @@ RUN pip install conan
 RUN curl "https://cmake.org/files/v3.12/cmake-3.12.3-Linux-x86_64.sh" -o "cmake-3.12.3-Linux-x86_64.sh" &&\
     sh cmake-3.12.3-Linux-x86_64.sh --skip-license
 
-ADD config /tmp/config
-RUN conan config install /tmp/config
-RUN conan user demo -p demo -r=my_local_server
-
-RUN yum install -y file zlib-devel bzip2-devel
+ADD config /tmp/conan-config
+RUN conan config install /tmp/conan-config
 
 WORKDIR $ASWF_ROOT_DIR
