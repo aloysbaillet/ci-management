@@ -4,8 +4,10 @@ import sys
 import os
 from contextlib import contextmanager
 
-PACKAGES = ['IlmBase',
+PACKAGES = ['boost',
+            'IlmBase',
             'OpenEXR',
+            'PyIlmBase',
             'TBB']
 
 def host_call(cmd):
@@ -17,24 +19,29 @@ def docker_call(cmd, cmds):
 
 def start_server():
     repoRoot = os.path.abspath(os.path.join(os.path.curdir, '..', '..'))
-    host_call('docker network create --driver bridge conan_network')
+    host_call('docker network create --driver bridge conan_network')        
     host_call('docker run '
-                '--network=conan_network '
-                '--detach -p 9300:9300 '
-                '-v %s/conan/server:/root/.conan_server '
-                '--name local_conan_server '
-                'conanio/conan_server:latest'%repoRoot)
+              '--network=conan_network '
+              '--detach -p 9300:9300 '
+              '-v %s/conan/server:/root/.conan_server '
+              '--name local_conan_server '
+              'conanio/conan_server:latest'%repoRoot)
 
 def stop_server():
-    host_call('docker stop local_conan_server')
-    host_call('docker rm --force local_conan_server')
-    host_call('docker network rm conan_network')
+    subprocess.call('docker stop local_conan_server', shell=True)
+    subprocess.call('docker rm --force local_conan_server', shell=True)
+    subprocess.call('docker network rm conan_network', shell=True)
+    subprocess.call('docker rm --force conan_builder', shell=True)
 
 @contextmanager
 def managed_docker(args):
     try:
         if args.remote == 'local_server':
-            start_server()
+            try:
+                start_server()
+            except subprocess.CalledProcessError:
+                stop_server()
+                start_server()
         yield None
     finally:
         if args.remote == 'local_server':
@@ -55,7 +62,7 @@ def main():
     docker_call('conan remote add aswftest https://api.bintray.com/conan/aloysbaillet/aswftest %r'%(not args.no_ssl_verify), cmds)
     
     if args.remote == 'local_server':
-        docker_call('conan remote update local_server http://local_conan_server:9300 False', cmds)
+        docker_call('conan remote add local_server http://local_conan_server:9300 False', cmds)
         docker_call('conan user local_user -p local_password -r=local_server', cmds)
     else:
         if args.upload:
@@ -80,7 +87,7 @@ def main():
         host_call('docker run '
                   + net +
                   '-v $(pwd):/tmp/vfx-build '
-                  '--rm '
+                  '--name conan_builder '
                   'aloysbaillet/aswf-vfx2018-conan '
                   '/bin/bash -c "%s"'%build)
 

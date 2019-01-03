@@ -2,7 +2,6 @@
 - project:
     name: 3rdparty-boost-vfx2018
     3rdparty: boost
-    download: !include-raw-escape: boost/download.sh
     jobs:
       - '3rdparty-{3rdparty}-stage-{stream}'
     project: ci-management
@@ -11,9 +10,8 @@
     stream: vfx2018
 
 - project:
-    name: 3rdparty-tbb-vfx2018
-    3rdparty: tbb
-    download: !include-raw-escape: tbb/download.sh
+    name: 3rdparty-TBB-vfx2018
+    3rdparty: TBB
     jobs:
       - '3rdparty-{3rdparty}-stage-{stream}'
     project: ci-management
@@ -22,9 +20,8 @@
     stream: vfx2018
 
 - project:
-    name: 3rdparty-ilmbase-vfx2018
-    3rdparty: ilmbase
-    download: !include-raw-escape: ilmbase/download.sh
+    name: 3rdparty-IlmBase-vfx2018
+    3rdparty: IlmBase
     jobs:
       - '3rdparty-{3rdparty}-stage-{stream}'
     project: ci-management
@@ -33,9 +30,8 @@
     stream: vfx2018
 
 - project:
-    name: 3rdparty-openexr-vfx2018
-    3rdparty: openexr
-    download: !include-raw-escape: openexr/download.sh
+    name: 3rdparty-OpenEXR-vfx2018
+    3rdparty: OpenEXR
     jobs:
       - '3rdparty-{3rdparty}-stage-{stream}'
     project: ci-management
@@ -44,9 +40,8 @@
     stream: vfx2018
 
 - project:
-    name: 3rdparty-pyilmbase-vfx2018
-    3rdparty: pyilmbase
-    download: !include-raw-escape: pyilmbase/download.sh
+    name: 3rdparty-PyIlmBase-vfx2018
+    3rdparty: PyIlmBase
     jobs:
       - '3rdparty-{3rdparty}-stage-{stream}'
     project: ci-management
@@ -124,9 +119,12 @@
 
     builders:
       - shell: 'pip install --user lftools'
-      - shell: '{download}'
-      - shell: 'cd jjb/3rdparty/{3rdparty} && docker build -t {3rdparty}-builder .'
-      - shell: 'mkdir -p $WORKSPACE/dist'
-      - shell: 'docker run --name {3rdparty}-builder --rm -v $WORKSPACE/dist:/mnt/dist {3rdparty}-builder'
+      - shell: >
+        docker run \
+            -v $(pwd):/tmp/vfx-build \
+            --name conan_builder \
+            aloysbaillet/aswf-vfx2018-conan \
+            /bin/bash -c \
+            "conan create /tmp/vfx-build/{3rdparty} aswf/vfx2018"
     publishers:
       - lf-infra-publish
