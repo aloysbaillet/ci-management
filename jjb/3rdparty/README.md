@@ -25,3 +25,5 @@ To build all using a local conan server (running within docker as well):
 
 To build a single package using a local conan server (running within docker as well):
 `python build_local.py -r local_server OpenEXR`
+
+To avoid having to re-download source packages at each build, you can manually download the .tar.gz files and place them alongside their corresponding `conanfile.py` and it will be used instead of re-downloading.
