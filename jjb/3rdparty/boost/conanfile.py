@@ -43,7 +43,7 @@ class BoostConan(ConanFile):
     short_paths = True
     no_copy_source = False
 
-    exports = '*.tar.bz2', 'patches/*'
+    exports = '*.tar.gz', 'patches/*'
 
     def config_options(self):
         if self.settings.compiler == "Visual Studio":
@@ -57,7 +57,7 @@ class BoostConan(ConanFile):
         if tools.os_info.is_windows:
             extension = ".zip"
         else:
-            extension = ".tar.bz2"
+            extension = ".tar.gz"
         
         base = "%s%s" % (self.folder_name, extension)
 
@@ -65,7 +65,7 @@ class BoostConan(ConanFile):
             self.output.info("Found local source tarball {}".format(base))
             tools.unzip(base)
         else:
-            url = "https://dl.bintray.com/boostorg/release/%s/source/%s" % (self.version, base)
+            url = "https://sourceforge.net/projects/boost/files/boost/%s/%s" % (self.version, base)
             self.output.warn("Downloading source tarball {}".format(url))
             tools.get(url)
 
