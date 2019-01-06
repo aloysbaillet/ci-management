@@ -9,7 +9,7 @@ from conans.errors import ConanInvalidConfiguration
 
 class TBBConan(ConanFile):
     name = "TBB"
-    version = "2019_U3"
+    version = "2017_U6"
     license = "Apache-2.0"
     url = "https://github.com/conan-community/conan-tbb"
     homepage = "https://github.com/01org/tbb"
@@ -18,10 +18,12 @@ programs that take full advantage of multicore performance, that are portable an
 that have future-proof scalability"""
     author = "Conan Community"
     topics = ("conan", "tbb", "threading", "parallelism", "tbbmalloc")
-    settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False]}
-    default_options = {"shared": False}
+    settings = "os", "compiler", "build_type", "arch", "cppstd"
+    options = {"shared": [True, False],
+               "preview": [True, False]}
+    default_options = {"shared": True, "preview": True}
     _source_subfolder = "source_subfolder"
+    exports = "*.tar.gz"
 
     def config_options(self):
         if self.settings.os == "Windows":
@@ -48,7 +50,14 @@ that have future-proof scalability"""
         return self.settings.os == 'Windows' and self.settings.compiler == 'clang'
 
     def source(self):
-        tools.get("{}/archive/{}.tar.gz".format(self.homepage, self.version))
+        base = "{version}.tar.gz".format(version=self.version)
+        if os.path.exists(base):
+            self.output.info("Found local source tarball {}".format(base))
+            tools.unzip(base)
+        else:
+            url = "{}/archive/{}".format(self.homepage, base)
+            self.output.warn("Downloading source tarball {}".format(url))
+            tools.get(url)
         os.rename("{}-{}".format(self.name.lower(), self.version), self._source_subfolder)
 
     def build(self):
@@ -67,25 +76,29 @@ that have future-proof scalability"""
             elif str(self.settings.compiler.libcxx) == 'libc++':
                 extra += " stdlib=libc++"
             extra += " compiler=gcc" if self.settings.compiler == 'gcc' else " compiler=clang"
-
         make = tools.get_env("CONAN_MAKE_PROGRAM", tools.which("make") or tools.which('mingw32-make'))
         if not make:
             raise Exception("This package needs 'make' in the path to build")
 
-        with tools.chdir(self._source_subfolder):
-            # intentionally not using AutoToolsBuildEnvironment for now - it's broken for clang-cl
-            if self.is_clanglc:
-                add_flag('CFLAGS', '-mrtm')
-                add_flag('CXXFLAGS', '-mrtm')
+        def _make():
+            with tools.chdir(self._source_subfolder):
+                # intentionally not using AutoToolsBuildEnvironment for now - it's broken for clang-cl
+                if self.is_clanglc:
+                    add_flag('CFLAGS', '-mrtm')
+                    add_flag('CXXFLAGS', '-mrtm')
 
-            if self.is_msvc:
-                # intentionally not using vcvars for clang-cl yet
-                with tools.vcvars(self.settings):
+                if self.is_msvc:
+                    # intentionally not using vcvars for clang-cl yet
+                    with tools.vcvars(self.settings):
+                        self.run("%s arch=%s %s" % (make, arch, extra))
+                elif self.is_mingw:
+                    self.run("%s arch=%s compiler=gcc %s" % (make, arch, extra))
+                else:
                     self.run("%s arch=%s %s" % (make, arch, extra))
-            elif self.is_mingw:
-                self.run("%s arch=%s compiler=gcc %s" % (make, arch, extra))
-            else:
-                self.run("%s arch=%s %s" % (make, arch, extra))
+        _make()
+        if self.options.preview:
+            extra += " tbb_cpf=1"
+            _make()
 
     def package(self):
         self.copy("LICENSE", dst="licenses", src=self._source_subfolder)
@@ -122,6 +135,9 @@ that have future-proof scalability"""
             self.cpp_info.libs.extend(["tbb", "tbbmalloc"])
             if self.settings.os != "Windows" and self.options.shared:
                 self.cpp_info.libs.extend(["tbbmalloc_proxy"])
+            if self.options.preview:
+                self.cpp_info.libs.extend(["tbb_preview"])
 
         if self.settings.os == "Linux":
             self.cpp_info.libs.append("pthread")
+

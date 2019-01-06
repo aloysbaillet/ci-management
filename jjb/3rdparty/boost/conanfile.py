@@ -1,7 +1,6 @@
 from conans import ConanFile
 from conans import tools
 from conans.client.build.cppstd_flags import cppstd_flag
-from conans.model.version import Version
 
 import os
 import sys
@@ -19,7 +18,7 @@ lib_list = ['math', 'wave', 'container', 'contract', 'exception', 'graph', 'iost
 
 class BoostConan(ConanFile):
     name = "boost"
-    version = "1.69.0"
+    version = "1.61.0"
     settings = "os", "arch", "compiler", "build_type", "cppstd"
     folder_name = "boost_%s" % version.replace(".", "_")
     description = "Boost provides free peer-reviewed portable C++ source libraries"
@@ -36,9 +35,7 @@ class BoostConan(ConanFile):
 
     default_options = ["shared=False", "header_only=False", "fPIC=True", "skip_lib_rename=False", "magic_autolink=False"]
     default_options.extend(["without_%s=False" % libname for libname in lib_list if libname != "python"])
-    default_options.append("without_python=True")
-    default_options.append("bzip2:shared=False")
-    default_options.append("zlib:shared=False")
+    default_options.append("without_python=False")
     default_options = tuple(default_options)
 
     url = "https://github.com/lasote/conan-boost"
@@ -46,20 +43,11 @@ class BoostConan(ConanFile):
     short_paths = True
     no_copy_source = False
 
-    exports = ['patches/*']
+    exports = '*.tar.gz', 'patches/*'
 
     def config_options(self):
         if self.settings.compiler == "Visual Studio":
             self.options.remove("fPIC")
-
-    @property
-    def zip_bzip2_requires_needed(self):
-        return not self.options.without_iostreams and not self.options.header_only
-
-    def configure(self):
-        if self.zip_bzip2_requires_needed:
-            self.requires("bzip2/1.0.6@conan/stable")
-            self.requires("zlib/1.2.11@conan/stable")
 
     def package_id(self):
         if self.options.header_only:
@@ -67,15 +55,19 @@ class BoostConan(ConanFile):
 
     def source(self):
         if tools.os_info.is_windows:
-            sha256 = "d074bcbcc0501c4917b965fc890e303ee70d8b01ff5712bae4a6c54f2b6b4e52"
             extension = ".zip"
         else:
-            sha256 = "9a2c2819310839ea373f42d69e733c339b4e9a19deab6bfec448281554aa4dbb"
             extension = ".tar.gz"
+        
+        base = "%s%s" % (self.folder_name, extension)
 
-        zip_name = "%s%s" % (self.folder_name, extension)
-        url = "https://dl.bintray.com/boostorg/release/%s/source/%s" % (self.version, zip_name)
-        tools.get(url, sha256=sha256)
+        if os.path.exists(base):
+            self.output.info("Found local source tarball {}".format(base))
+            tools.unzip(base)
+        else:
+            url = "https://sourceforge.net/projects/boost/files/boost/%s/%s" % (self.version, base)
+            self.output.warn("Downloading source tarball {}".format(url))
+            tools.get(url)
 
     ##################### BUILDING METHODS ###########################
 
@@ -84,12 +76,12 @@ class BoostConan(ConanFile):
             self.output.warn("Header only package, skipping build")
             return
 
-        if not self.options.without_python:
-            tools.patch(base_path=os.path.join(self.build_folder, self.folder_name), patch_file='patches/python_base_prefix.patch', strip=1)
+        # if not self.options.without_python:
+        #     tools.patch(base_path=os.path.join(self.build_folder, self.folder_name), patch_file='patches/python_base_prefix.patch', strip=1)
 
         b2_exe = self.bootstrap()
         flags = self.get_build_flags()
-        # Help locating bzip2 and zlib
+
         self.create_user_config_jam(self.build_folder)
 
         # JOIN ALL FLAGS
@@ -242,17 +234,23 @@ class BoostConan(ConanFile):
             except:
                 pass
 
-        if tools.is_apple_os(self.settings.os):
-            if self.settings.get_safe("os.version"):
-                cxx_flags.append(tools.apple_deployment_target_flag(self.settings.os,
-                                                                    self.settings.os.version))
-
         if self.settings.os == "iOS":
+            arch = self.settings.get_safe('arch')
+
             cxx_flags.append("-DBOOST_AC_USE_PTHREADS")
             cxx_flags.append("-DBOOST_SP_USE_PTHREADS")
             cxx_flags.append("-fvisibility=hidden")
             cxx_flags.append("-fvisibility-inlines-hidden")
             cxx_flags.append("-fembed-bitcode")
+            cxx_flags.extend(["-arch", tools.to_apple_arch(arch)])
+
+            try:
+                cxx_flags.append("-mios-version-min=%s" % self.settings.os.version)
+                self.output.info("iOS deployment target: %s" % self.settings.os.version)
+            except:
+                pass
+
+            flags.append("macosx-version=%s" % self.b2_macosx_version())
 
         cxx_flags = 'cxxflags="%s"' % " ".join(cxx_flags) if cxx_flags else ""
         flags.append(cxx_flags)
@@ -278,67 +276,26 @@ class BoostConan(ConanFile):
 
         return flags
 
-    @property
-    def _ar(self):
-        if "AR" in os.environ:
-            return os.environ["AR"]
-        if tools.is_apple_os(self.settings.os):
-            return tools.XCRun(self.settings).ar
-        return None
-
-    @property
-    def _ranlib(self):
-        if "RANLIB" in os.environ:
-            return os.environ["RANLIB"]
-        if tools.is_apple_os(self.settings.os):
-            return tools.XCRun(self.settings).ranlib
-        return None
-
-    @property
-    def _cxx(self):
-        if "CXX" in os.environ:
-            return os.environ["CXX"]
-        if tools.is_apple_os(self.settings.os):
-            return tools.XCRun(self.settings).cxx
-        return None
-
     def create_user_config_jam(self, folder):
-        """To help locating the zlib and bzip2 deps"""
         self.output.warn("Patching user-config.jam")
 
-        compiler_command = self._cxx
+        compiler_command = os.environ.get('CXX', None)
 
         contents = ""
-        if self.zip_bzip2_requires_needed:
-            contents = "\nusing zlib : 1.2.11 : <include>%s <search>%s <name>%s ;" % (
-                self.deps_cpp_info["zlib"].include_paths[0].replace('\\', '/'),
-                self.deps_cpp_info["zlib"].lib_paths[0].replace('\\', '/'),
-                self.deps_cpp_info["zlib"].libs[0])
-
-            contents += "\nusing bzip2 : 1.0.6 : <include>%s <search>%s <name>%s ;" % (
-                self.deps_cpp_info["bzip2"].include_paths[0].replace('\\', '/'),
-                self.deps_cpp_info["bzip2"].lib_paths[0].replace('\\', '/'),
-                self.deps_cpp_info["bzip2"].libs[0])
 
         contents += "\nusing python : {} : \"{}\" ;".format(sys.version[:3], sys.executable.replace('\\', '/'))
 
         toolset, version, exe = self.get_toolset_version_and_exe()
         exe = compiler_command or exe  # Prioritize CXX
-
         # Specify here the toolset with the binary if present if don't empty parameter : :
         contents += '\nusing "%s" : "%s" : ' % (toolset, version)
         contents += ' "%s"' % exe.replace("\\", "/")
 
-        if tools.is_apple_os(self.settings.os):
-            contents += " -isysroot %s" % tools.XCRun(self.settings).sdk_path
-            if self.settings.get_safe("arch"):
-                contents += " -arch %s" % tools.to_apple_arch(self.settings.arch)
-
         contents += " : \n"
-        if self._ar:
-            contents += '<archiver>"%s" ' % tools.which(self._ar).replace("\\", "/")
-        if self._ranlib:
-            contents += '<ranlib>"%s" ' % tools.which(self._ranlib).replace("\\", "/")
+        if "AR" in os.environ:
+            contents += '<archiver>"%s" ' % tools.which(os.environ["AR"]).replace("\\", "/")
+        if "RANLIB" in os.environ:
+            contents += '<ranlib>"%s" ' % tools.which(os.environ["RANLIB"]).replace("\\", "/")
         if "CXXFLAGS" in os.environ:
             contents += '<cxxflags>"%s" ' % os.environ["CXXFLAGS"]
         if "CFLAGS" in os.environ:
@@ -347,6 +304,11 @@ class BoostConan(ConanFile):
             contents += '<linkflags>"%s" ' % os.environ["LDFLAGS"]
         if "ASFLAGS" in os.environ:
             contents += '<asmflags>"%s" ' % os.environ["ASFLAGS"]
+
+        if self.settings.os == "iOS":
+            sdk_name = tools.apple_sdk_name(self.settings)
+            contents += '<striper> <root>%s <architecture>%s <target-os>iphone' % (
+                self.bjam_darwin_root(sdk_name), self.bjam_darwin_architecture(sdk_name))
 
         contents += " ;"
 
@@ -359,7 +321,7 @@ class BoostConan(ConanFile):
         compiler = str(self.settings.compiler)
         if self.settings.compiler == "Visual Studio":
             cversion = self.settings.compiler.version
-            _msvc_version = "14.1" if Version(str(cversion)) >= "15" else "%s.0" % cversion
+            _msvc_version = "14.1" if cversion == "15" else "%s.0" % cversion
             return "msvc", _msvc_version, ""
         elif compiler == "gcc" and compiler_version[0] >= "5":
             # For GCC >= v5 we only need the major otherwise Boost doesn't find the compiler
@@ -375,7 +337,11 @@ class BoostConan(ConanFile):
             # For GCC < v5 and Clang we need to provide the entire version string
             return compiler, compiler_version, ""
         elif self.settings.compiler == "apple-clang":
-            return "clang-darwin", compiler_version, self._cxx
+            if self.settings.os == "iOS":
+                cc = tools.XCRun(self.settings, tools.apple_sdk_name(self.settings)).cc
+                return "darwin", self.bjam_darwin_toolchain_version(), cc
+            else:
+                return "clang", compiler_version, ""
         elif self.settings.compiler == "sun-cc":
             return "sunpro", compiler_version, ""
         else:
@@ -385,7 +351,7 @@ class BoostConan(ConanFile):
     def _get_boostrap_toolset(self):
         if self.settings.os == "Windows" and self.settings.compiler == "Visual Studio":
             comp_ver = self.settings.compiler.version
-            return "vc%s" % ("141" if Version(str(comp_ver)) >= "15" else comp_ver)
+            return "vc%s" % ("141" if comp_ver == "15" else comp_ver)
 
         with_toolset = {"apple-clang": "darwin"}.get(str(self.settings.compiler),
                                                      str(self.settings.compiler))
@@ -488,7 +454,7 @@ class BoostConan(ConanFile):
                     self.cpp_info.defines.append("BOOST_PYTHON_STATIC_LIB")
 
             if self.settings.compiler == "Visual Studio":
-                if not self.options.magic_autolink:
+                if self.options.magic_autolink == False:
                     # DISABLES AUTO LINKING! NO SMART AND MAGIC DECISIONS THANKS!
                     self.cpp_info.defines.extend(["BOOST_ALL_NO_LIB"])
                     self.output.info("Disabled magic autolinking (smart and magic decisions)")
@@ -502,3 +468,37 @@ class BoostConan(ConanFile):
                 self.cpp_info.libs.append("pthread")
 
         self.env_info.BOOST_ROOT = self.package_folder
+
+    def b2_macosx_version(self):
+        sdk_name = tools.apple_sdk_name(self.settings)
+        if sdk_name == None:
+            raise ValueError("Bad apple SDK name! "
+                + "b2_macosx_version could be called only to build for Macos/iOS")
+
+        sdk_version = self._xcrun_sdk_version(sdk_name)
+
+        return {"macosx": sdk_version,
+                 "iphoneos": "iphone-%s" % sdk_version,
+                 "iphonesimulator": "iphonesim-%s" % sdk_version
+               }.get(sdk_name, "%s-%s" % (sdk_name, sdk_version))
+
+    def bjam_darwin_root(self, sdk_name):
+        return os.path.join(tools.XCRun(self.settings, sdk_name).sdk_platform_path, 'Developer')
+
+    def bjam_darwin_toolchain_version(self):
+        sdk_name = tools.apple_sdk_name(self.settings)
+        if sdk_name == None:
+            raise ValueError("Bad apple SDK name! "
+                + "bjam_darwin_toolchain_version could be called only to build for Macos/iOS")
+
+        sdk_version = self._xcrun_sdk_version(sdk_name)
+
+        return {"macosx": sdk_version}.get(sdk_name, "%s~%s" % (sdk_version, sdk_name))
+
+    def bjam_darwin_architecture(self, sdk_name):
+        return "x86" if sdk_name in ["macosx", "iphonesimulator"] else "arm"
+
+    def _xcrun_sdk_version(self, sdk_name):
+        """returns devault SDK version for specified SDK name which can be returnd
+        by `self.xcrun_sdk_name()`"""
+        return tools.XCRun(self.settings, sdk_name).sdk_version
