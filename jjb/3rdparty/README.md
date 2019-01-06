@@ -21,6 +21,19 @@ The conan settings for the platform are found in the `conan/config/settings.yml`
 * `Linux: version: [None, rhel6, rhel7]`
 which allows the indirect selection of the libc version and a set of system-level dependencies that do not belong here.
 
+### Building packages against VFX Platform dependencies
+
+For *end-users* of these conan packages you have to manually install Conan via pip: [Conan Install](https://docs.conan.io/en/latest/installation.html#install-with-pip-recommended) on a CentOS-7 machine.
+You also need to have devtoolset-6 installed and activated [VFX Plaform Compiler](https://www.vfxplatform.com/#footnote-gcc6)
+You probably want to also have a recent version of CMake installed [CMake](https://cmake.org/download/)
+
+Once conan is installed you need to run the `conan config install THIS_REPO_CONAN_CONFIG_FOLDER` where THIS_REPO_CONAN_CONFIG_FOLDER is the `conan/config` folder of this github repository. 
+This will install the right conan platform settings and install a profile called vfx2018 to use when building packages.
+
+Finally you can create a file called `conanfile.txt` where you define the VFX platform packages required by your program and the generators you want to use, then run 
+`mkdir build && cd build && conan install ..` to download all dependencies and allow you to build your program. See conan documentation there: [Conan](https://docs.conan.io/en/latest/getting_started.html)
+
+
 ## Jenkins Jobs
 
 All jobs are named 3rdparty-X-vfx2018 where X is a third-party package for which we need binaries available.
