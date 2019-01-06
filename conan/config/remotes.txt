@@ -1,2 +1,1 @@
 conan-center https://conan.bintray.com True
-local_server http://127.0.0.1:9300 False
