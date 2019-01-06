@@ -8,6 +8,19 @@ All builds are based on a minimal VFX Platform compliant docker image.
 
 This is using [conan.io] to build and retrieve dependencies.
 
+### Conan Recipes
+
+If there is an existing recipe to build a package found in the https://github.com/conan-community account then it is copied via a squashed subtree under the `jjp/3rdparty`
+folder where it can be patched sustainably.
+
+All build options are kept but the default options are updated to match the general expectations of the VFX Platform.
+
+### Conan Settings
+
+The conan settings for the platform are found in the `conan/config/settings.yml` and have the following additions compared to the default conan settings:
+* `Linux: version: [None, rhel6, rhel7]`
+which allows the indirect selection of the libc version and a set of system-level dependencies that do not belong here.
+
 ## Jenkins Jobs
 
 All jobs are named 3rdparty-X-vfx2018 where X is a third-party package for which we need binaries available.
